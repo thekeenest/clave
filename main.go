@@ -11,7 +11,7 @@ import (
 
 const (
 	defaultStorePath = "/data/local/tmp/fido2-keys.enc"
-	version          = "1.1.0"
+	version          = "1.2.0"
 )
 
 func main() {
@@ -66,36 +66,22 @@ func cmdServe() {
 	fmt.Println("=== FIDO2 Security Key Daemon ===")
 	fmt.Println("Version:", version)
 
-	// Set up USB HID gadget
-	fmt.Println("\n[1/4] Setting up USB HID gadget...")
-	if hidAlreadyActive() {
-		fmt.Println("HID gadget already active, skipping setup")
-	} else if err := rebindGadgetWithHID(); err != nil {
-		fmt.Printf("Failed to add HID to existing gadget: %v\n", err)
-		fmt.Println("Trying standalone gadget...")
-		disableCurrentGadget()
-		if err := gadgetSetup(); err != nil {
-			fmt.Fprintf(os.Stderr, "Gadget setup failed: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	// Find HID device
-	fmt.Println("\n[2/4] Finding HID device...")
-	var hidDev string
-	for i := 0; i < 30; i++ {
-		hidDev, _ = findHIDDevice()
-		if hidDev != "" {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	fmt.Println("\n[1/4] Looking for HID device...")
+	hidDev, _ := findHIDDevice()
 	if hidDev == "" {
-		fmt.Fprintln(os.Stderr, "ERROR: no /dev/hidg* device found after gadget setup")
-		removeHIDFromGadget()
+		fmt.Fprintln(os.Stderr, `ERROR: no /dev/hidg* device found.
+
+The clave-hid Magisk module sets up the USB HID gadget at boot.
+Install it once, then reboot:
+
+  adb push clave-hid.zip /data/local/tmp/
+  adb shell magisk --install-module /data/local/tmp/clave-hid.zip
+  adb reboot
+
+After reboot, /dev/hidg* will exist automatically.`)
 		os.Exit(1)
 	}
-	fmt.Printf("Found HID device: %s\n", hidDev)
+	fmt.Printf("\n[2/4] Using HID device: %s\n", hidDev)
 	if err := setHIDPermissions(hidDev); err != nil {
 		fmt.Printf("Warning: chmod %s: %v\n", hidDev, err)
 	}
@@ -123,19 +109,14 @@ func cmdServe() {
 	hid, err := newCTAPHID(hidDev, ctap)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "HID open failed: %v\n", err)
-		gadgetTeardown()
 		os.Exit(1)
 	}
-	defer hid.close()
-
-	// Handle shutdown — close HID but keep gadget (avoids USB re-enumeration)
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		fmt.Println("\nShutting down (HID gadget left active, use 'teardown' to remove)...")
-		hid.close()
-		os.Exit(0)
+		fmt.Println("\nShutting down...")
+		hid.shutdown()
 	}()
 
 	fmt.Println("\n========================================")
@@ -145,27 +126,34 @@ func cmdServe() {
 	fmt.Println("  Ctrl+C to stop")
 	fmt.Println("========================================\n")
 
-	if err := hid.serve(); err != nil {
+	err = hid.serve()
+	hid.close()
+	if err != nil && !hid.closing.Load() {
 		fmt.Fprintf(os.Stderr, "HID serve error: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Println("Stopped. HID gadget left active for fast restart.")
 }
 
 func cmdSetup() {
-	if err := rebindGadgetWithHID(); err != nil {
-		fmt.Printf("Add to existing failed: %v\nTrying standalone...\n", err)
-		disableCurrentGadget()
-		if err := gadgetSetup(); err != nil {
-			fmt.Fprintf(os.Stderr, "Setup failed: %v\n", err)
-			os.Exit(1)
-		}
+	if dev, _ := findHIDDevice(); dev != "" {
+		fmt.Printf("HID device already active: %s\n", dev)
+		return
 	}
-	fmt.Println("USB HID gadget ready")
+	fmt.Println(`No HID device found. Install the clave-hid Magisk module and reboot.
+The module sets up USB HID at boot — no runtime gadget changes needed.
+
+  adb push clave-hid.zip /data/local/tmp/
+  adb shell magisk --install-module /data/local/tmp/clave-hid.zip
+  adb reboot`)
+	os.Exit(1)
 }
 
 func cmdTeardown() {
-	removeHIDFromGadget()
-	fmt.Println("USB HID gadget removed")
+	fmt.Println(`To remove FIDO2 HID, disable or remove the Magisk module and reboot:
+
+  rm -rf /data/adb/modules/clave-hid
+  reboot`)
 }
 
 func cmdList() {

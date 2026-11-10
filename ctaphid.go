@@ -4,9 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"io"
-	"os"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -23,13 +23,13 @@ const (
 	cmdWink      = 0x08 | 0x80
 	cmdLock      = 0x04 | 0x80
 
-	errInvalidCmd    = 0x01
-	errInvalidPar    = 0x02
-	errInvalidLen    = 0x03
-	errInvalidSeq    = 0x04
-	errMsgTimeout    = 0x05
-	errChannelBusy   = 0x06
-	errOther         = 0x7F
+	errInvalidCmd  = 0x01
+	errInvalidPar  = 0x02
+	errInvalidLen  = 0x03
+	errInvalidSeq  = 0x04
+	errMsgTimeout  = 0x05
+	errChannelBusy = 0x06
+	errOther       = 0x7F
 
 	capWink = 0x01
 	capCBOR = 0x04
@@ -39,36 +39,65 @@ const (
 )
 
 type ctapHID struct {
-	dev      *os.File
+	fd       int
+	name     string
 	ctap     *ctap2Handler
 	mu       sync.Mutex
 	channels map[uint32]time.Time
 	nextCID  uint32
+	done     chan struct{}
+	closing  atomic.Bool
 }
 
 func newCTAPHID(devPath string, ctap *ctap2Handler) (*ctapHID, error) {
-	dev, err := os.OpenFile(devPath, os.O_RDWR, 0666)
+	fd, err := syscall.Open(devPath, syscall.O_RDWR|syscall.O_NONBLOCK, 0666)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", devPath, err)
 	}
 	return &ctapHID{
-		dev:      dev,
+		fd:       fd,
+		name:     devPath,
 		ctap:     ctap,
 		channels: make(map[uint32]time.Time),
 		nextCID:  1,
+		done:     make(chan struct{}),
 	}, nil
 }
 
-func (h *ctapHID) close() { h.dev.Close() }
+func (h *ctapHID) shutdown() {
+	if h.closing.CompareAndSwap(false, true) {
+		close(h.done)
+	}
+}
+
+func (h *ctapHID) close() {
+	syscall.Close(h.fd)
+}
 
 func (h *ctapHID) readPacket() ([]byte, error) {
 	buf := make([]byte, hidReportSize)
-	n, err := io.ReadFull(h.dev, buf)
-	if err != nil {
-		return nil, err
-	}
-	if n != hidReportSize {
-		return nil, fmt.Errorf("short read: %d", n)
+	offset := 0
+	for offset < hidReportSize {
+		select {
+		case <-h.done:
+			return nil, fmt.Errorf("shutdown")
+		default:
+		}
+
+		n, err := syscall.Read(h.fd, buf[offset:])
+		if err != nil {
+			if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			if err == syscall.EINTR {
+				continue
+			}
+			return nil, fmt.Errorf("read fd: %w", err)
+		}
+		if n > 0 {
+			offset += n
+		}
 	}
 	return buf, nil
 }
@@ -79,7 +108,7 @@ func (h *ctapHID) writePacket(data []byte) error {
 		copy(padded, data)
 		data = padded
 	}
-	_, err := h.dev.Write(data[:hidReportSize])
+	_, err := syscall.Write(h.fd, data[:hidReportSize])
 	return err
 }
 
@@ -141,7 +170,7 @@ func (h *ctapHID) allocCID() uint32 {
 }
 
 func (h *ctapHID) serve() error {
-	fmt.Println("CTAPHID: listening on", h.dev.Name())
+	fmt.Println("CTAPHID: listening on", h.name)
 	for {
 		pkt, err := h.readPacket()
 		if err != nil {

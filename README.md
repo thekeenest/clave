@@ -28,7 +28,7 @@ Works everywhere hardware keys work: GitHub, Google, OpenAI, Cloudflare, Bitward
   <img src="diagram.svg" width="680" alt="clave architecture: phone connects to computer via USB FIDO2 HID">
 </p>
 
-1. Clave registers a USB HID gadget through ConfigFS with the FIDO Alliance descriptor (`0xF1D0`)
+1. A Magisk module registers a USB HID gadget through ConfigFS after boot completes, with the FIDO Alliance descriptor (`0xF1D0`)
 2. The host OS recognizes it as a standard FIDO2 authenticator — no drivers needed
 3. When a site requests WebAuthn, the CTAP2 protocol runs over USB HID packets
 4. You press Volume Down on the phone to approve. Private keys never leave the device.
@@ -60,7 +60,7 @@ Works everywhere hardware keys work: GitHub, Google, OpenAI, Cloudflare, Bitward
 
 | What | Details |
 |---|---|
-| Phone | Any rooted Android (Magisk or KernelSU) |
+| Phone | Any rooted Android with Magisk |
 | ROM | Custom ROM with USB ConfigFS HID support — LineageOS 20+ works |
 | Computer | macOS, Linux, or Windows with `adb` installed |
 | Cable | USB-C or micro-USB, data-capable |
@@ -69,26 +69,32 @@ Works everywhere hardware keys work: GitHub, Google, OpenAI, Cloudflare, Bitward
 
 ## Install
 
-**One-liner** (downloads the latest binary and pushes it to your phone):
+**Step 1 — Push binary:**
 
 ```bash
-curl -sL https://raw.githubusercontent.com/thekeenest/clave/main/scripts/install.sh | bash
-```
-
-**Manual install** (no Go required):
-
-```bash
-# Download binary
 curl -sL https://github.com/thekeenest/clave/releases/latest/download/clave-arm64 -o clave
-
-# Push to phone
 adb root
 adb push clave /data/local/tmp/clave
 adb shell chmod 755 /data/local/tmp/clave
+```
 
-# Run
+**Step 2 — Install Magisk module** (sets up USB HID at boot):
+
+```bash
+adb push build/clave-hid.zip /data/local/tmp/
+adb shell magisk --install-module /data/local/tmp/clave-hid.zip
+adb push magisk/clave-hid/service.sh /data/adb/modules/clave-hid/
+adb shell chmod 755 /data/adb/modules/clave-hid/service.sh
+adb reboot
+```
+
+**Step 3 — Run:**
+
+```bash
 adb shell /data/local/tmp/clave serve -password YOUR_PASSWORD
 ```
+
+Plug USB into your computer. Open any WebAuthn site. Click "Add security key." Press Volume Down on the phone. Done.
 
 **Build from source:**
 
@@ -97,8 +103,6 @@ git clone https://github.com/thekeenest/clave.git && cd clave
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o build/clave .
 adb push build/clave /data/local/tmp/clave
 ```
-
-Plug USB into your computer. Open any WebAuthn site. Click "Add security key." Press Volume Down on the phone. Done.
 
 **Control script** (for daily use):
 
@@ -136,9 +140,12 @@ clave/
 ├── gadget.go        USB ConfigFS — HID gadget create/bind/teardown
 ├── store.go         Key store — AES-256-GCM encrypted credential file
 ├── presence.go      User presence — Linux input subsystem (volume keys)
+├── magisk/
+│   └── clave-hid/          Magisk module — sets up USB HID after boot completes
+│       ├── module.prop
+│       └── service.sh
 ├── scripts/
 │   ├── clavectl.sh         Host-side control script
-│   ├── hid-setup.sh        Device-side gadget setup
 │   └── standalone-fido.sh  Standalone mode (no ADB, pure FIDO2)
 └── test/
     └── webauthn-test.html  Browser test page

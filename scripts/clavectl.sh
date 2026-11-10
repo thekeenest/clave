@@ -57,22 +57,16 @@ start() {
         exit 1
     fi
 
-    # Ensure HID gadget is set up
+    # Check HID device exists (set up by clave-hid Magisk module at boot)
     if ! adb shell "ls /dev/hidg* 2>/dev/null" | grep -q hidg; then
-        echo "Setting up HID gadget..."
-        adb push "${SCRIPT_DIR}/hid-setup.sh" /data/local/tmp/hid-setup.sh >/dev/null
-        adb shell "su -c 'nohup sh /data/local/tmp/hid-setup.sh &'"
-        echo "Waiting for gadget setup + ADB reconnect..."
-        sleep 15
-        for i in $(seq 1 20); do
-            adb devices 2>/dev/null | grep -q device$ && break
-            sleep 2
-        done
-        adb root >/dev/null 2>&1
-        sleep 1
+        echo "ERROR: No /dev/hidg* device found."
+        echo "Install the clave-hid Magisk module and reboot:"
+        echo "  adb push build/clave-hid.zip /data/local/tmp/"
+        echo "  adb shell magisk --install-module /data/local/tmp/clave-hid.zip"
+        echo "  adb reboot"
+        exit 1
     fi
 
-    # Set HID device permissions
     adb shell "chmod 666 /dev/hidg* 2>/dev/null"
 
     echo "Starting FIDO2 daemon..."
@@ -109,17 +103,9 @@ stop() {
 }
 
 teardown() {
-    echo "Removing HID gadget..."
-    adb root >/dev/null 2>&1
-    adb push "${SCRIPT_DIR}/teardown-gadget.sh" /data/local/tmp/teardown-gadget.sh >/dev/null
-    adb shell "su -c 'nohup sh /data/local/tmp/teardown-gadget.sh &'"
-    echo "Waiting for ADB reconnect..."
-    sleep 10
-    for i in $(seq 1 20); do
-        adb devices 2>/dev/null | grep -q device$ && break
-        sleep 2
-    done
-    echo "Normal USB restored."
+    echo "To remove FIDO2 HID, disable the Magisk module and reboot:"
+    echo "  adb shell rm -rf /data/adb/modules/clave-hid"
+    echo "  adb reboot"
 }
 
 status() {
