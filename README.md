@@ -24,15 +24,9 @@ Works everywhere hardware keys work: GitHub, Google, OpenAI, Cloudflare, Bitward
 
 ## How it works
 
-```
-  ┌──────────────────┐         USB          ┌──────────────────┐
-  │   Android Phone   │ ◄─────────────────► │    Computer       │
-  │                    │    FIDO2 HID        │                   │
-  │  clave daemon      │                     │  Browser/OS       │
-  │  volume key = ✓    │                     │  "Security key    │
-  │  keys encrypted    │                     │   detected"       │
-  └──────────────────┘                       └──────────────────┘
-```
+<p align="center">
+  <img src="diagram.svg" width="680" alt="clave architecture: phone connects to computer via USB FIDO2 HID">
+</p>
 
 1. Clave registers a USB HID gadget through ConfigFS with the FIDO Alliance descriptor (`0xF1D0`)
 2. The host OS recognizes it as a standard FIDO2 authenticator — no drivers needed

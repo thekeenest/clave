@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 200">
+  <defs>
+    <linearGradient id="phoneGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e3a5f"/>
+      <stop offset="100%" style="stop-color:#0d1b2a"/>
+    </linearGradient>
+    <linearGradient id="pcGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e3a5f"/>
+      <stop offset="100%" style="stop-color:#0d1b2a"/>
+    </linearGradient>
+    <linearGradient id="cableGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#58a6ff"/>
+      <stop offset="100%" style="stop-color:#a78bfa"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Phone box -->
+  <rect x="20" y="20" width="220" height="160" rx="16" fill="url(#phoneGrad)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="130" y="56" text-anchor="middle" fill="#58a6ff" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="600">Android Phone</text>
+  <line x1="50" y1="68" x2="210" y2="68" stroke="#58a6ff" stroke-opacity="0.2" stroke-width="1"/>
+  <text x="130" y="96" text-anchor="middle" fill="#c9d1d9" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13">clave daemon</text>
+  <text x="130" y="120" text-anchor="middle" fill="#c9d1d9" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13">volume key = approve</text>
+  <text x="130" y="144" text-anchor="middle" fill="#c9d1d9" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13">keys encrypted at rest</text>
+
+  <!-- Cable -->
+  <line x1="240" y1="100" x2="480" y2="100" stroke="url(#cableGrad)" stroke-width="3" stroke-linecap="round"/>
+  <!-- Arrows -->
+  <polygon points="474,93 486,100 474,107" fill="#a78bfa"/>
+  <polygon points="246,93 234,100 246,107" fill="#58a6ff"/>
+  <!-- Cable labels -->
+  <rect x="310" y="72" width="100" height="22" rx="6" fill="#0d1b2a" stroke="#58a6ff" stroke-opacity="0.3" stroke-width="1"/>
+  <text x="360" y="88" text-anchor="middle" fill="#58a6ff" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-weight="500">USB cable</text>
+  <text x="360" y="126" text-anchor="middle" fill="#8b949e" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="11">FIDO2 HID protocol</text>
+
+  <!-- Computer box -->
+  <rect x="480" y="20" width="220" height="160" rx="16" fill="url(#pcGrad)" stroke="#a78bfa" stroke-width="2"/>
+  <text x="590" y="56" text-anchor="middle" fill="#a78bfa" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="600">Computer</text>
+  <line x1="510" y1="68" x2="670" y2="68" stroke="#a78bfa" stroke-opacity="0.2" stroke-width="1"/>
+  <text x="590" y="96" text-anchor="middle" fill="#c9d1d9" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13">any browser / OS</text>
+  <text x="590" y="120" text-anchor="middle" fill="#c9d1d9" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13">WebAuthn / FIDO2</text>
+  <text x="590" y="144" text-anchor="middle" fill="#8b949e" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="12" font-style="italic">"security key detected"</text>
+</svg>
