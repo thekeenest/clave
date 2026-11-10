@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FIDO2 Key Test</title>
+<style>
+body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; background: #1a1a1a; color: #e0e0e0; }
+h1 { font-size: 1.4em; }
+button { background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-size: 1em; cursor: pointer; margin: 8px 4px; }
+button:hover { background: #1d4ed8; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+#log { background: #111; padding: 16px; border-radius: 8px; font-family: monospace; font-size: 0.85em; white-space: pre-wrap; max-height: 400px; overflow-y: auto; margin-top: 16px; }
+.ok { color: #4ade80; }
+.err { color: #f87171; }
+.info { color: #60a5fa; }
+</style>
+</head>
+<body>
+<h1>FIDO2 Security Key Test</h1>
+<p>Test your Android FIDO2 hardware key. Make sure the daemon is running on the phone.</p>
+<div>
+<button id="btnRegister" onclick="doRegister('discouraged')">Register (no UV)</button>
+<button id="btnRegisterUV" onclick="doRegister('preferred')">Register (with UV)</button>
+<button id="btnAuth" onclick="doAuth()" disabled>Authenticate</button>
+</div>
+<div id="log"></div>
+<script>
+let credential = null;
+
+function log(msg, cls) {
+  const el = document.getElementById('log');
+  const span = document.createElement('span');
+  span.className = cls || '';
+  span.textContent = msg + '\n';
+  el.appendChild(span);
+  el.scrollTop = el.scrollHeight;
+}
+
+function buf2hex(buf) {
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function doRegister(uvLevel) {
+  uvLevel = uvLevel || 'discouraged';
+  log('Starting registration (userVerification: ' + uvLevel + ')...', 'info');
+  try {
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+
+    const options = {
+      publicKey: {
+        challenge: challenge,
+        rp: { name: "FIDO2 Key Test", id: location.hostname },
+        user: {
+          id: new Uint8Array(16),
+          name: "testuser",
+          displayName: "Test User"
+        },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        authenticatorSelection: {
+          authenticatorAttachment: "cross-platform",
+          residentKey: "preferred",
+          userVerification: uvLevel
+        },
+        timeout: 60000,
+        attestation: "direct"
+      }
+    };
+
+    log('Waiting for security key... (press Volume Down on phone)', 'info');
+    credential = await navigator.credentials.create(options);
+
+    log('Registration SUCCESS!', 'ok');
+    log('  Credential ID: ' + buf2hex(credential.rawId).substring(0, 32) + '...', 'ok');
+    log('  Attestation format: ' + new TextDecoder().decode(new Uint8Array(credential.response.attestationObject).slice(0, 50)), 'info');
+    document.getElementById('btnAuth').disabled = false;
+  } catch (e) {
+    log('Registration FAILED: ' + e.message, 'err');
+    log('  ' + e.name + ': ' + e.stack?.split('\n')[0], 'err');
+  }
+}
+
+async function doAuth() {
+  if (!credential) { log('Register first!', 'err'); return; }
+  log('Starting authentication...', 'info');
+  try {
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+
+    const options = {
+      publicKey: {
+        challenge: challenge,
+        rpId: location.hostname,
+        allowCredentials: [{
+          type: "public-key",
+          id: credential.rawId,
+          transports: ["usb"]
+        }],
+        userVerification: "discouraged",
+        timeout: 60000
+      }
+    };
+
+    log('Waiting for security key... (press Volume Down on phone)', 'info');
+    const assertion = await navigator.credentials.get(options);
+
+    log('Authentication SUCCESS!', 'ok');
+    log('  Signature length: ' + new Uint8Array(assertion.response.signature).length + ' bytes', 'ok');
+    const authData = new Uint8Array(assertion.response.authenticatorData);
+    const counter = (authData[33] << 24) | (authData[34] << 16) | (authData[35] << 8) | authData[36];
+    log('  Sign count: ' + counter, 'ok');
+  } catch (e) {
+    log('Authentication FAILED: ' + e.message, 'err');
+    log('  ' + e.name + ': ' + e.stack?.split('\n')[0], 'err');
+  }
+}
+
+log('Ready. Click "Register Credential" to test.', 'info');
+log('Tip: On macOS, the system security key dialog may appear.', 'info');
+log('If Chrome crashes, try Firefox instead.', 'info');
+</script>
+</body>
+</html>

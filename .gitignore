@@ -1,0 +1,24 @@
+# Binaries
+build/
+*.exe
+*.out
+clave
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Test artifacts
+test/*.log
+chrome.log
+
+# Secrets
+.pw
+*.enc
