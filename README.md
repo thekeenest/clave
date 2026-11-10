@@ -73,33 +73,44 @@ Works everywhere hardware keys work: GitHub, Google, OpenAI, Cloudflare, Bitward
 
 **Tested on:** Xiaomi Redmi 9 (lancelot, MT6768), LineageOS 24.0, kernel 4.19
 
-## Quick start
+## Install
+
+**One-liner** (downloads the latest binary and pushes it to your phone):
 
 ```bash
-git clone https://github.com/thekeenest/clave.git && cd clave
+curl -sL https://raw.githubusercontent.com/thekeenest/clave/main/scripts/install.sh | bash
+```
 
-# Build for ARM64 Android
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o build/clave .
+**Manual install** (no Go required):
 
-# Push to device
+```bash
+# Download binary
+curl -sL https://github.com/thekeenest/clave/releases/latest/download/clave-arm64 -o clave
+
+# Push to phone
 adb root
-adb push build/clave /data/local/tmp/clave
+adb push clave /data/local/tmp/clave
 adb shell chmod 755 /data/local/tmp/clave
 
 # Run
-adb shell /data/local/tmp/clave serve \
-  -password YOUR_PASSWORD \
-  -store /data/local/tmp/keys.enc
+adb shell /data/local/tmp/clave serve -password YOUR_PASSWORD
 ```
 
-Open any WebAuthn-capable site, click "Add security key," and press Volume Down on the phone.
-
-**Or use the control script:**
+**Build from source:**
 
 ```bash
-bash scripts/clavectl.sh deploy          # build + push
-bash scripts/clavectl.sh start           # start daemon
-bash scripts/clavectl.sh start --auto-approve  # skip button (testing only)
+git clone https://github.com/thekeenest/clave.git && cd clave
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o build/clave .
+adb push build/clave /data/local/tmp/clave
+```
+
+Plug USB into your computer. Open any WebAuthn site. Click "Add security key." Press Volume Down on the phone. Done.
+
+**Control script** (for daily use):
+
+```bash
+bash scripts/clavectl.sh start           # start security key mode
+bash scripts/clavectl.sh start --auto-approve  # skip button press (testing only)
 bash scripts/clavectl.sh stop            # stop daemon
 ```
 
