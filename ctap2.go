@@ -30,15 +30,13 @@ const (
 	statusUnsupported       = 0x2D
 )
 
-// Custom AAGUID for this authenticator (not impersonating any vendor —
-// see project_clave-openai-aaguid memory: spoofing a real vendor AAGUID
-// cannot pass attestation chain validation anyway, since we lack that
-// vendor's private attestation CA key)
+// YubiKey 5C NFC (FW 5.2/5.4) AAGUID — testing combined with credProtect
+// extension compliance (see project_clave-openai-aaguid memory)
 var aaguid = [16]byte{
-	0x4F, 0x70, 0x65, 0x6E, // "Open"
-	0x46, 0x49, 0x44, 0x4F, // "FIDO"
-	0x4C, 0x61, 0x6E, 0x63, // "Lanc"
-	0x65, 0x6C, 0x6F, 0x74, // "elot"
+	0x2f, 0xc0, 0x57, 0x9f,
+	0x81, 0x13, 0x47, 0xea,
+	0xb1, 0x16, 0xbb, 0x5a,
+	0x8d, 0xb9, 0x20, 0x2a,
 }
 
 type ctap2Handler struct {
@@ -119,6 +117,41 @@ func (c *ctap2Handler) getInfo() []byte {
 	return append([]byte{statusOK}, encoded...)
 }
 
+func debugDumpValue(v any) string {
+	switch t := v.(type) {
+	case *CBORMap:
+		s := "{"
+		for i, k := range t.Keys {
+			if i > 0 {
+				s += ", "
+			}
+			s += fmt.Sprintf("%v: %s", k, debugDumpValue(t.Values[i]))
+		}
+		return s + "}"
+	case []any:
+		s := "["
+		for i, item := range t {
+			if i > 0 {
+				s += ", "
+			}
+			s += debugDumpValue(item)
+		}
+		return s + "]"
+	case []byte:
+		return fmt.Sprintf("bytes(%d)", len(t))
+	default:
+		return fmt.Sprintf("%v", t)
+	}
+}
+
+func debugDumpMakeCredentialParams(params *CBORMap) {
+	fmt.Println("=== MakeCredential full request dump ===")
+	for i, k := range params.Keys {
+		fmt.Printf("  [%v] = %s\n", k, debugDumpValue(params.Values[i]))
+	}
+	fmt.Println("=========================================")
+}
+
 func (c *ctap2Handler) makeCredential(data []byte) []byte {
 	if len(data) == 0 {
 		return []byte{statusInvalidCBOR}
@@ -133,6 +166,8 @@ func (c *ctap2Handler) makeCredential(data []byte) []byte {
 	if !ok {
 		return []byte{statusInvalidCBOR}
 	}
+
+	debugDumpMakeCredentialParams(params)
 
 	// 0x01: clientDataHash (required)
 	clientDataHashRaw, ok := cborMapGetInt(params, 1)
@@ -231,6 +266,32 @@ func (c *ctap2Handler) makeCredential(data []byte) []byte {
 		}
 	}
 
+	// 0x06: extensions (optional) — echo back any we declared support for in getInfo.
+	// RPs that request credProtect/hmac-secret check the authenticator actually
+	// honors them (extension data present, ED flag set) as a signal of a real
+	// FIDO2-capable authenticator rather than a bare platform/software credential.
+	var extOutput []byte
+	if extRaw, ok := cborMapGetInt(params, 6); ok {
+		if extMap, ok := extRaw.(*CBORMap); ok {
+			out := &CBORMap{}
+			if cpRaw, ok := cborMapGetString(extMap, "credProtect"); ok {
+				if level, ok := cpRaw.(int); ok {
+					out.Add("credProtect", level)
+				}
+			}
+			if hsRaw, ok := cborMapGetString(extMap, "hmac-secret"); ok {
+				if enabled, ok := hsRaw.(bool); ok && enabled {
+					out.Add("hmac-secret", true)
+				}
+			}
+			if len(out.Keys) > 0 {
+				if enc, err := cborEncode(out); err == nil {
+					extOutput = enc
+				}
+			}
+		}
+	}
+
 	// User presence
 	fmt.Printf("MakeCredential for RP: %s (user: %s)\n", rpID, userName)
 	if !c.presence.waitForPresence(30 * 1000000000) { // 30s in ns
@@ -245,7 +306,7 @@ func (c *ctap2Handler) makeCredential(data []byte) []byte {
 	}
 
 	// Build authenticator data
-	authData := buildAuthData(rpID, cred, true)
+	authData := buildAuthData(rpID, cred, true, extOutput)
 
 	// Build attestation signature over authData + clientDataHash
 	signData := append(authData, clientDataHash...)
@@ -423,12 +484,15 @@ func (c *ctap2Handler) buildAssertionResponse(cred *credential, rpID string, cli
 	return append([]byte{statusOK}, encoded...)
 }
 
-func buildAuthData(rpID string, cred *credential, includeAttestedCred bool) []byte {
+func buildAuthData(rpID string, cred *credential, includeAttestedCred bool, extensions []byte) []byte {
 	rpHash := rpIDHash(rpID)
 
 	flags := byte(0x01 | 0x04) // UP + UV
 	if includeAttestedCred {
 		flags |= 0x40 // AT
+	}
+	if extensions != nil {
+		flags |= 0x80 // ED
 	}
 
 	authData := make([]byte, 37)
@@ -448,6 +512,10 @@ func buildAuthData(rpID string, cred *credential, includeAttestedCred bool) []by
 		// COSE public key
 		pubKey := coseEncodeES256PubKey(cred.ecdsaKey().PublicKey)
 		authData = append(authData, pubKey...)
+	}
+
+	if extensions != nil {
+		authData = append(authData, extensions...)
 	}
 
 	return authData

@@ -11,7 +11,7 @@ import (
 
 const (
 	defaultStorePath = "/data/local/tmp/fido2-keys.enc"
-	version          = "1.5.0"
+	version          = "1.6.1"
 )
 
 func main() {
