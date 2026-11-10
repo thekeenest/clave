@@ -108,8 +108,30 @@ func (h *ctapHID) writePacket(data []byte) error {
 		copy(padded, data)
 		data = padded
 	}
-	_, err := syscall.Write(h.fd, data[:hidReportSize])
-	return err
+	data = data[:hidReportSize]
+
+	offset := 0
+	for offset < hidReportSize {
+		select {
+		case <-h.done:
+			return fmt.Errorf("shutdown")
+		default:
+		}
+
+		n, err := syscall.Write(h.fd, data[offset:])
+		if err != nil {
+			if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			if err == syscall.EINTR {
+				continue
+			}
+			return fmt.Errorf("write fd: %w", err)
+		}
+		offset += n
+	}
+	return nil
 }
 
 func (h *ctapHID) sendResponse(cid uint32, cmd byte, payload []byte) error {

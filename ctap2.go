@@ -30,7 +30,10 @@ const (
 	statusUnsupported       = 0x2D
 )
 
-// Custom AAGUID for this authenticator (not impersonating any vendor)
+// Custom AAGUID for this authenticator (not impersonating any vendor —
+// see project_clave-openai-aaguid memory: spoofing a real vendor AAGUID
+// cannot pass attestation chain validation anyway, since we lack that
+// vendor's private attestation CA key)
 var aaguid = [16]byte{
 	0x4F, 0x70, 0x65, 0x6E, // "Open"
 	0x46, 0x49, 0x44, 0x4F, // "FIDO"
@@ -41,6 +44,7 @@ var aaguid = [16]byte{
 type ctap2Handler struct {
 	store    *keyStore
 	presence *presenceHandler
+	attest   *attestationKey
 
 	// For getNextAssertion
 	pendingAssertions []*credential
@@ -49,8 +53,8 @@ type ctap2Handler struct {
 	pendingFlags      byte
 }
 
-func newCTAP2Handler(store *keyStore, presence *presenceHandler) *ctap2Handler {
-	return &ctap2Handler{store: store, presence: presence}
+func newCTAP2Handler(store *keyStore, presence *presenceHandler, attest *attestationKey) *ctap2Handler {
+	return &ctap2Handler{store: store, presence: presence, attest: attest}
 }
 
 func (c *ctap2Handler) waitingForPresence() bool {
@@ -81,7 +85,7 @@ func (c *ctap2Handler) getInfo() []byte {
 	// 0x01: versions
 	info.Add(int(1), []any{"FIDO_2_0", "FIDO_2_1_PRE"})
 	// 0x02: extensions
-	info.Add(int(2), []any{"hmac-secret"})
+	info.Add(int(2), []any{"credProtect", "hmac-secret"})
 	// 0x03: aaguid
 	info.Add(int(3), aaguid[:])
 	// 0x04: options
@@ -105,7 +109,7 @@ func (c *ctap2Handler) getInfo() []byte {
 	alg := map[string]any{"alg": int(-7), "type": "public-key"}
 	info.Add(int(10), []any{alg})
 	// 0x0E: firmwareVersion
-	info.Add(int(14), int(0x010000))
+	info.Add(int(14), int(0x050400))
 
 	encoded, err := cborEncode(info)
 	if err != nil {
@@ -245,19 +249,19 @@ func (c *ctap2Handler) makeCredential(data []byte) []byte {
 
 	// Build attestation signature over authData + clientDataHash
 	signData := append(authData, clientDataHash...)
-	sigHash := sha256.Sum256(signData)
-	r, s, err := ecdsa.Sign(rand.Reader, cred.ecdsaKey(), sigHash[:])
+	sig, err := c.attest.sign(signData)
 	if err != nil {
 		return []byte{statusInvalidCBOR}
 	}
-	sig := marshalDERSignature(r, s)
 
-	// Build attestation statement (string keys per CTAP2 packed format)
+	// Packed attestation with x5c — RPs that gate "hardware key" eligibility on
+	// attestation presence (fmt != "none") need a non-empty attStmt, even though
+	// the AAGUID in authData is what drives the cosmetic model-name display.
 	attStmt := &CBORMap{}
 	attStmt.Add("alg", int(-7))
 	attStmt.Add("sig", sig)
+	attStmt.Add("x5c", []any{c.attest.cert})
 
-	// CTAP2 response uses integer keys: 0x01=fmt, 0x02=authData, 0x03=attStmt
 	attObj := &CBORMap{}
 	attObj.Add(int(1), "packed")
 	attObj.Add(int(2), authData)
@@ -385,8 +389,9 @@ func (c *ctap2Handler) buildAssertionResponse(cred *credential, rpID string, cli
 	resp := &CBORMap{}
 	// 0x01: credential descriptor
 	credDesc := map[string]any{
-		"id":   cred.CredentialID,
-		"type": "public-key",
+		"id":         cred.CredentialID,
+		"type":       "public-key",
+		"transports": []any{"usb"},
 	}
 	resp.Add(int(1), credDesc)
 	// 0x02: authData

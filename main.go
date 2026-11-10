@@ -11,7 +11,7 @@ import (
 
 const (
 	defaultStorePath = "/data/local/tmp/fido2-keys.enc"
-	version          = "1.2.0"
+	version          = "1.5.0"
 )
 
 func main() {
@@ -87,7 +87,7 @@ After reboot, /dev/hidg* will exist automatically.`)
 	}
 
 	// Open key store
-	fmt.Println("\n[3/4] Opening key store...")
+	fmt.Println("\n[3/5] Opening key store...")
 	store, err := newKeyStore(*storePath, *password)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Key store error: %v\n", err)
@@ -95,15 +95,24 @@ After reboot, /dev/hidg* will exist automatically.`)
 	}
 	fmt.Printf("Key store: %s (%d credentials)\n", *storePath, len(store.list()))
 
+	// Load attestation key
+	fmt.Println("\n[4/5] Loading attestation key...")
+	attestPath := *storePath + ".attest"
+	attest, err := loadOrCreateAttestationKey(attestPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Attestation key error: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Set up user presence handler
-	fmt.Println("\n[4/4] Starting user presence monitor...")
+	fmt.Println("\n[5/5] Starting user presence monitor...")
 	presence := newPresenceHandler(*autoApprove)
 	if !*autoApprove {
 		presence.monitorVolumeKeys()
 	}
 
 	// Create CTAP2 handler
-	ctap := newCTAP2Handler(store, presence)
+	ctap := newCTAP2Handler(store, presence, attest)
 
 	// Open HID device
 	hid, err := newCTAPHID(hidDev, ctap)
